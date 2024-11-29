@@ -1,34 +1,137 @@
 import streamlit as st
-from streamlit_folium import st_folium
 import folium
-from streamlit_js_eval import streamlit_js_eval
+from streamlit_folium import st_folium
+import requests
 
-# Streamlit Page Configuration
-st.set_page_config(page_title="Smart Parking Spot Finder", layout="centered")
+# Streamlit App Title
+st.title("Smart Parking Tracker")
 
-# Title
-st.title("Smart Parking Spot Finder 🅿️")
-st.write("Click the button below to find your current location:")
+# Section: Get Current Location
+if st.button("Get Current Location"):
+    st.write("Fetching location...")
 
-# Button to Trigger Location Fetch
-if st.button("Find My Location"):
-    st.write("Fetching your location. Please allow access in your browser...")
+    # JavaScript to fetch geolocation data
+    loc_script = """
+    <script>
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const coords = {
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude
+                };
+                document.getElementById("location-data").innerText = JSON.stringify(coords);
+            },
+            (error) => {
+                document.getElementById("location-data").innerText = "Error: Unable to fetch location.";
+            }
+        );
+    </script>
+    <div id="location-data">Waiting for location...</div>
+    """
+    result = st.components.v1.html(loc_script, height=100)
+    
+    # Parse the JavaScript result
+    if result:
+        try:
+            location_data = eval(result)
+            latitude = location_data.get("latitude", 0)
+            longitude = location_data.get("longitude", 0)
+            st.write(f"Current Location: Latitude {latitude}, Longitude {longitude}")
+        except Exception:
+            st.write("Error fetching location. Please try again.")
 
-    # Execute JavaScript to get the user's location
-    location = streamlit_js_eval(js_code="navigator.geolocation.getCurrentPosition(position => position.coords, console.error);", key="geoLocation")
+# Example fetched coordinates (fallback for demonstration)
+latitude, longitude = 13.394968, 77.728851  # Replace with real fetched data when working
 
-    # Show location if retrieved
-    if location:
-        latitude = location.get("latitude")
-        longitude = location.get("longitude")
-        
-        if latitude and longitude:
-            st.success(f"Location found: Latitude = {latitude}, Longitude = {longitude}")
+# Section: Display Location on Map
+st.write("### Map View of Your Location")
+m = folium.Map(location=[latitude, longitude], zoom_start=15)
+folium.Marker([latitude, longitude], popup="Your Location").add_to(m)
+st_folium(m, width=700, height=500)
 
-            # Display map
-            m = folium.Map(location=[latitude, longitude], zoom_start=15)
-            folium.Marker([latitude, longitude], popup="You are here!").add_to(m)
-            st.subheader("Your Location on the Map:")
-            st_folium(m, width=700, height=500)
+# Section: Send Coordinates to IoT System
+st.write("### Integrating with IoT System")
+iot_endpoint = st.text_input("Enter IoT Endpoint URL:", "https://example-iot-cloud.com/api/coordinates")
+
+if st.button("Send Location to IoT"):
+    try:
+        data = {"latitude": latitude, "longitude": longitude}
+        response = requests.post(iot_endpoint, json=data)
+        if response.status_code == 200:
+            st.success("Location sent successfully!")
+            st.write("Response:", response.json())
         else:
-            st.error("Unable to retrieve location. Please try again.")
+            st.error(f"Failed to send location. Status code: {response.status_code}")
+            st.write("Response:", response.text)
+    except Exception as e:
+        st.error("Error sending location to IoT system.")
+        st.write(e)
+
+
+
+
+
+
+import streamlit as st
+import folium
+from streamlit_folium import st_folium
+import requests
+import time
+
+# Streamlit App Title
+st.title("Smart Parking Tracker")
+
+# ThingSpeak API Details
+API_KEY = '0AKJTZTFTJL76SMD'
+CHANNEL_ID = '2769557'
+URL = f'https://api.thingspeak.com/channels/2769557/feeds.json?api_key=0AKJTZTFTJL76SMD'
+
+# Fetch Location from ThingSpeak
+def fetch_location():
+    try:
+        response = requests.get(URL)
+        if response.status_code == 200:
+            data = response.json()
+            latest_data = data['feeds'][-1]  # Get the most recent data
+            latitude = float(latest_data['field1'])
+            longitude = float(latest_data['field2'])
+            return latitude, longitude
+        else:
+            st.error("Error fetching data from ThingSpeak!")
+            return None, None
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
+        return None, None
+
+# Section: Display Location on Map
+latitude, longitude = fetch_location()
+
+if latitude and longitude:
+    st.write("### Map View of Your Location")
+    # Display the map with fetched coordinates
+    m = folium.Map(location=[latitude, longitude], zoom_start=15)
+    folium.Marker([latitude, longitude], popup="Your Location").add_to(m)
+    st_folium(m, width=700, height=500)
+
+    # Section: Send Coordinates to IoT System
+    st.write("### Integrating with IoT System")
+    iot_endpoint = st.text_input("Enter IoT Endpoint URL:", "https://example-iot-cloud.com/api/coordinates")
+
+    if st.button("Send Location to IoT"):
+        try:
+            data = {"latitude": latitude, "longitude": longitude}
+            response = requests.post(iot_endpoint, json=data)
+            if response.status_code == 200:
+                st.success("Location sent successfully!")
+                st.write("Response:", response.json())
+            else:
+                st.error(f"Failed to send location. Status code: {response.status_code}")
+                st.write("Response:", response.text)
+        except Exception as e:
+            st.error("Error sending location to IoT system.")
+            st.write(e)
+
+else:
+    st.write("Fetching data from ThingSpeak...")
+    st.spinner("Please wait...")  # Show a loading spinner while fetching location
+    time.sleep(5)  # Simulate waiting time for data fetch (use appropriate logic)
